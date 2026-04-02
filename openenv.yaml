@@ -1,0 +1,89 @@
+name: bug-triage-env
+version: 0.1.0
+description: >
+  An OpenEnv environment where an AI agent learns to triage software bug reports.
+  The agent classifies reports by category, assigns priority levels, identifies
+  the responsible team, and drafts acknowledgement replies — across three tasks
+  of increasing difficulty.
+
+author: your-hf-username        # TODO: replace with your HF username
+license: MIT
+
+# ── Tasks ────────────────────────────────────────────────────────────────────
+tasks:
+  - id: easy
+    name: Bug classification
+    description: Classify a bug report into one of four categories (UI, backend, infra, security).
+    difficulty: easy
+    max_steps: 1
+    reward_range: [0.0, 1.0]
+
+  - id: medium
+    name: Classification + priority
+    description: Classify the bug and assign a priority level (P0–P3) with a justification.
+    difficulty: medium
+    max_steps: 1
+    reward_range: [0.0, 1.0]
+
+  - id: hard
+    name: Full triage + reply
+    description: >
+      Classify, prioritise, assign to the correct team, and draft a
+      2-sentence acknowledgement reply for the reporter.
+    difficulty: hard
+    max_steps: 1
+    reward_range: [0.0, 1.0]
+
+# ── Action space ─────────────────────────────────────────────────────────────
+action_space:
+  type: object
+  description: >
+    A JSON string containing the agent's triage response.
+    Schema varies by task level (see tasks above).
+  fields:
+    response:
+      type: string
+      description: >
+        JSON-encoded response string. Examples by task:
+          easy   — {"category": "UI"}
+          medium — {"category": "backend", "priority": "P1", "reason": "..."}
+          hard   — {"category": "security", "priority": "P0", "team": "security", "reply": "..."}
+
+# ── Observation space ─────────────────────────────────────────────────────────
+observation_space:
+  type: object
+  fields:
+    task_description:
+      type: string
+      description: Full prompt + raw bug report text shown to the agent.
+    task_level:
+      type: string
+      enum: [easy, medium, hard]
+      description: Difficulty level of the current task.
+    feedback:
+      type: string
+      description: Human-readable feedback on the previous step's score.
+    reward:
+      type: float
+      range: [0.0, 1.0]
+      description: Score awarded for the last action.
+    done:
+      type: boolean
+      description: True when the episode (all 3 tasks) is complete.
+    success:
+      type: boolean
+      description: True if the last action scored >= 0.8.
+
+# ── Reward design ─────────────────────────────────────────────────────────────
+reward:
+  description: Partial credit awarded per task.
+  easy:   "1.0 for correct category, 0.0 otherwise"
+  medium: "0.4 correct category + 0.4 correct priority + 0.2 non-empty reason"
+  hard:   "0.3 correct category + 0.3 correct priority + 0.2 correct team + 0.1 reply length + 0.1 reply tone"
+
+# ── Runtime ───────────────────────────────────────────────────────────────────
+runtime:
+  max_episode_steps: 3
+  inference_timeout_seconds: 1200   # 20 min limit per hackathon rules
+  min_vcpu: 2
+  min_memory_gb: 8

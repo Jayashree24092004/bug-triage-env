@@ -1,0 +1,1568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bug Triage Env — OpenEnv · Meta PyTorch Hackathon</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #07070e;
+  --surface: #10101a;
+  --surface2: #16161f;
+  --surface3: #1e1e2a;
+  --border: #252535;
+  --border2: #2e2e42;
+  --accent: #7c6aff;
+  --accent-glow: rgba(124,106,255,0.15);
+  --green: #3dffa0;
+  --green-glow: rgba(61,255,160,0.12);
+  --amber: #ffb347;
+  --red: #ff5f6d;
+  --text: #eeeef8;
+  --muted: #5a5a7a;
+  --muted2: #3a3a55;
+  --mono: 'JetBrains Mono', monospace;
+  --display: 'Syne', sans-serif;
+}
+
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+/* ── NOISE TEXTURE ── */
+body::after {
+  content:'';
+  position:fixed;
+  inset:0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events:none;
+  z-index:9999;
+  opacity:0.4;
+}
+
+/* ── GRID OVERLAY ── */
+body::before {
+  content:'';
+  position:fixed;
+  inset:0;
+  background-image:
+    linear-gradient(rgba(124,106,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124,106,255,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events:none;
+  z-index:0;
+}
+
+.wrap { max-width: 1280px; margin:0 auto; padding:0 40px; position:relative; z-index:1; }
+
+/* ══════════════════════════════════════════════
+   HERO
+══════════════════════════════════════════════ */
+.hero {
+  padding: 80px 0 60px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-glow {
+  position: absolute;
+  top: -120px; left: 50%;
+  transform: translateX(-50%);
+  width: 700px; height: 400px;
+  background: radial-gradient(ellipse, rgba(124,106,255,0.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border2);
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 28px;
+  letter-spacing: 0.04em;
+}
+
+.badge-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.hero h1 {
+  font-family: var(--display);
+  font-size: clamp(42px, 6vw, 76px);
+  font-weight: 800;
+  line-height: 1.0;
+  letter-spacing: -2px;
+  margin-bottom: 24px;
+}
+
+.hero h1 .accent { color: var(--accent); }
+.hero h1 .dim { color: var(--muted); }
+
+.hero-desc {
+  font-size: 18px;
+  color: var(--muted);
+  max-width: 640px;
+  line-height: 1.7;
+  margin-bottom: 40px;
+  font-family: var(--display);
+  font-weight: 400;
+}
+
+.hero-desc strong { color: var(--text); font-weight: 600; }
+
+.hero-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tag {
+  padding: 6px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid;
+  letter-spacing: 0.04em;
+}
+
+.tag-purple { background: rgba(124,106,255,0.08); color: var(--accent); border-color: rgba(124,106,255,0.25); }
+.tag-green  { background: rgba(61,255,160,0.06);  color: var(--green);  border-color: rgba(61,255,160,0.2); }
+.tag-amber  { background: rgba(255,179,71,0.07);  color: var(--amber);  border-color: rgba(255,179,71,0.22); }
+.tag-red    { background: rgba(255,95,109,0.07);  color: var(--red);    border-color: rgba(255,95,109,0.22); }
+
+/* ══════════════════════════════════════════════
+   SECTION HEADERS
+══════════════════════════════════════════════ */
+.section { padding: 72px 0; border-bottom: 1px solid var(--border); }
+
+.section-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-label::after {
+  content:'';
+  flex:1;
+  max-width: 60px;
+  height:1px;
+  background: var(--border2);
+}
+
+.section-title {
+  font-family: var(--display);
+  font-size: clamp(28px, 4vw, 44px);
+  font-weight: 800;
+  letter-spacing: -1px;
+  line-height: 1.1;
+  margin-bottom: 16px;
+}
+
+.section-body {
+  font-size: 16px;
+  color: var(--muted);
+  max-width: 700px;
+  line-height: 1.8;
+  margin-bottom: 48px;
+  font-family: var(--display);
+}
+
+.section-body strong { color: var(--text); }
+
+/* ══════════════════════════════════════════════
+   PROBLEM STATEMENT
+══════════════════════════════════════════════ */
+.problem-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 48px;
+}
+
+@media(max-width:800px){ .problem-grid { grid-template-columns:1fr; } }
+
+.problem-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s, transform 0.2s;
+}
+
+.problem-card:hover { border-color: var(--border2); transform: translateY(-3px); }
+
+.problem-card::before {
+  content:'';
+  position:absolute;
+  top:0; left:0; right:0;
+  height:2px;
+}
+
+.pc-red::before { background: linear-gradient(90deg, var(--red), transparent); }
+.pc-amber::before { background: linear-gradient(90deg, var(--amber), transparent); }
+.pc-purple::before { background: linear-gradient(90deg, var(--accent), transparent); }
+
+.problem-icon {
+  width: 44px; height: 44px;
+  border-radius: 10px;
+  display: flex; align-items:center; justify-content:center;
+  font-size: 20px;
+  margin-bottom: 18px;
+}
+
+.pi-red   { background: rgba(255,95,109,0.1); }
+.pi-amber { background: rgba(255,179,71,0.1); }
+.pi-purple{ background: rgba(124,106,255,0.1); }
+
+.problem-card h3 {
+  font-family: var(--display);
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+
+.problem-card p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.75;
+  font-family: var(--display);
+}
+
+/* ══════════════════════════════════════════════
+   SOLUTION — HOW IT WORKS
+══════════════════════════════════════════════ */
+.flow-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  position: relative;
+  margin-bottom: 48px;
+}
+
+.flow-step {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 24px;
+  position: relative;
+}
+
+.flow-step-line {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.step-circle {
+  width: 44px; height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--border2);
+  background: var(--surface);
+  display: flex; align-items:center; justify-content:center;
+  font-family: var(--display);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--accent);
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.step-connector {
+  flex: 1;
+  width: 1px;
+  background: var(--border);
+  min-height: 32px;
+}
+
+.flow-step-content {
+  padding: 0 0 44px 0;
+}
+
+.flow-step:last-child .flow-step-content { padding-bottom: 0; }
+.flow-step:last-child .step-connector { display: none; }
+
+.flow-step-content h3 {
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  padding-top: 8px;
+}
+
+.flow-step-content p {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.8;
+  max-width: 600px;
+  font-family: var(--display);
+}
+
+.flow-step-content p strong { color: var(--text); }
+
+.code-inline {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 13px;
+  color: var(--text);
+  margin-top: 12px;
+  font-family: var(--mono);
+  line-height: 1.7;
+}
+
+.kw { color: var(--accent); }
+.st { color: var(--green); }
+.cm { color: var(--muted); font-style: italic; }
+.nu { color: var(--amber); }
+
+/* ══════════════════════════════════════════════
+   TASKS TABLE
+══════════════════════════════════════════════ */
+.tasks-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 48px;
+}
+
+@media(max-width:800px){ .tasks-grid { grid-template-columns:1fr; } }
+
+.task-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.task-card:hover { transform: translateY(-4px); border-color: var(--border2); }
+
+.task-card-header {
+  padding: 20px 22px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.task-card-header h3 {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.level-pill {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.lp-easy   { background: rgba(61,255,160,0.1);  color: var(--green); border:1px solid rgba(61,255,160,0.25); }
+.lp-medium { background: rgba(255,179,71,0.1);  color: var(--amber); border:1px solid rgba(255,179,71,0.25); }
+.lp-hard   { background: rgba(255,95,109,0.1);  color: var(--red);   border:1px solid rgba(255,95,109,0.25); }
+
+.task-card-body { padding: 18px 22px; }
+
+.task-card-body p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.75;
+  margin-bottom: 14px;
+  font-family: var(--display);
+}
+
+.task-card-body p strong { color: var(--text); }
+
+.reward-formula {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 12px;
+  line-height: 1.9;
+  color: var(--muted);
+}
+
+.rf-line { display: flex; justify-content: space-between; }
+.rf-label { color: var(--muted); }
+.rf-val { color: var(--green); font-weight: 700; }
+
+/* ══════════════════════════════════════════════
+   WHAT MAKES IT DIFFERENT
+══════════════════════════════════════════════ */
+.diff-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 0;
+}
+
+@media(max-width:700px){ .diff-grid { grid-template-columns:1fr; } }
+
+.diff-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 26px 28px;
+}
+
+.diff-card h3 {
+  font-family: var(--display);
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.diff-icon {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  display: flex; align-items:center; justify-content:center;
+  font-size: 14px;
+}
+
+.di-green  { background: rgba(61,255,160,0.1); }
+.di-purple { background: rgba(124,106,255,0.1); }
+.di-amber  { background: rgba(255,179,71,0.1); }
+.di-red    { background: rgba(255,95,109,0.1); }
+
+.diff-card p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.8;
+  font-family: var(--display);
+}
+
+.diff-card p strong { color: var(--text); }
+
+/* ══════════════════════════════════════════════
+   LIVE DEMO
+══════════════════════════════════════════════ */
+.demo-section { padding: 72px 0 80px; }
+
+.demo-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 24px;
+  margin-bottom: 28px;
+}
+
+.url-field {
+  flex: 1;
+  min-width: 220px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-family: var(--mono);
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.url-field:focus { border-color: var(--accent); }
+
+.server-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sdot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--muted2);
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+
+.sdot.on  { background: var(--green); box-shadow: 0 0 10px var(--green); }
+.sdot.err { background: var(--red); }
+
+.btn {
+  padding: 10px 24px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.15s;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.btn:disabled { opacity:0.35; cursor:not-allowed; transform:none !important; }
+.btn-accent { background: var(--accent); color: #fff; }
+.btn-accent:hover:not(:disabled) { background: #9580ff; transform: translateY(-1px); }
+.btn-outline { background: transparent; color: var(--text); border: 1px solid var(--border2); }
+.btn-outline:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.btn-green { background: transparent; color: var(--green); border: 1px solid rgba(61,255,160,0.3); }
+.btn-green:hover:not(:disabled) { background: var(--green-glow); }
+
+/* ── DEMO GRID ── */
+.demo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+@media(max-width:900px){ .demo-grid { grid-template-columns:1fr; } }
+
+/* ── STATS BAR ── */
+.stats-bar {
+  display: grid;
+  grid-template-columns: repeat(4,1fr);
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+@media(max-width:600px){ .stats-bar { grid-template-columns:repeat(2,1fr); } }
+
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 18px 20px;
+}
+
+.stat-lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+.stat-num {
+  font-family: var(--display);
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text);
+}
+
+.stat-num.c-accent { color: var(--accent); }
+.stat-num.c-green  { color: var(--green); }
+.stat-num.c-amber  { color: var(--amber); }
+
+/* ── PANEL CARD ── */
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.panel-head {
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel-title {
+  font-family: var(--display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.panel-body { padding: 22px; }
+
+.endpoint-pill {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: rgba(124,106,255,0.1);
+  color: var(--accent);
+  border: 1px solid rgba(124,106,255,0.2);
+  font-weight: 600;
+}
+
+/* ── BUG REPORT BOX ── */
+.idle-state {
+  text-align: center;
+  padding: 56px 24px;
+  color: var(--muted);
+}
+
+.idle-icon {
+  width: 64px; height: 64px;
+  border-radius: 16px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  display: flex; align-items:center; justify-content:center;
+  font-size: 28px;
+  margin: 0 auto 16px;
+}
+
+.idle-state h3 {
+  font-family: var(--display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.idle-state p { font-size: 13px; line-height: 1.6; font-family: var(--display); }
+
+.task-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.task-instruct {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.8;
+  margin-bottom: 14px;
+  font-family: var(--display);
+  padding: 14px 16px;
+  background: var(--surface2);
+  border-radius: 8px;
+  border-left: 2px solid var(--accent);
+}
+
+.bug-box {
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow-y: auto;
+  font-family: var(--mono);
+}
+
+.bug-box::-webkit-scrollbar { width:4px; }
+.bug-box::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+
+.feedback-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: var(--surface2);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--muted);
+  font-family: var(--display);
+  line-height: 1.6;
+}
+
+.fb-icon { color: var(--accent); font-size: 16px; flex-shrink:0; margin-top:1px; }
+
+/* ── ACTION AREA ── */
+.level-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.ltab {
+  padding: 7px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  letter-spacing: 0.04em;
+}
+
+.ltab:hover:not(.active) { border-color: var(--muted); color: var(--text); }
+.ltab.active { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+
+.hint-box {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.9;
+  margin-bottom: 14px;
+}
+
+.hint-box .hk { color: var(--accent); }
+.hint-box .hv { color: var(--green); }
+
+.ans-textarea {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  resize: vertical;
+  min-height: 100px;
+  outline: none;
+  transition: border-color 0.15s;
+  line-height: 1.7;
+}
+
+.ans-textarea:focus { border-color: var(--accent); }
+
+.quick-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 16px;
+}
+
+.qbtn {
+  padding: 5px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.qbtn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+
+.action-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ── SCORE BARS ── */
+.score-section { margin-top: 0; }
+
+.sbar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.sbar-lbl {
+  font-size: 13px;
+  color: var(--muted);
+  min-width: 80px;
+  font-family: var(--display);
+  font-weight: 600;
+}
+
+.sbar-track {
+  flex: 1;
+  height: 8px;
+  background: var(--surface2);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.sbar-fill {
+  height: 100%;
+  border-radius: 4px;
+  width: 0%;
+  transition: width 0.7s cubic-bezier(0.34,1.56,0.64,1);
+}
+
+.sf-green  { background: var(--green); box-shadow: 0 0 8px rgba(61,255,160,0.4); }
+.sf-amber  { background: var(--amber); box-shadow: 0 0 8px rgba(255,179,71,0.4); }
+.sf-red    { background: var(--red);   box-shadow: 0 0 8px rgba(255,95,109,0.4); }
+.sf-accent { background: var(--accent); box-shadow: 0 0 8px rgba(124,106,255,0.4); }
+
+.sbar-val {
+  font-size: 15px;
+  font-weight: 700;
+  min-width: 40px;
+  text-align: right;
+  font-family: var(--display);
+}
+
+.divider { height:1px; background:var(--border); margin: 16px 0; }
+
+/* ── HISTORY ── */
+.history-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.history-scroll::-webkit-scrollbar { width:4px; }
+.history-scroll::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+
+.h-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  animation: fadeUp 0.3s ease;
+}
+
+@keyframes fadeUp { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+
+.h-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.h-score { font-size: 15px; font-weight: 700; font-family: var(--display); }
+.hs-hi { color: var(--green); }
+.hs-md { color: var(--amber); }
+.hs-lo { color: var(--red); }
+
+.h-response {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.h-feedback { font-size: 11px; color: var(--muted); margin-top: 4px; font-family: var(--display); }
+
+.no-history {
+  text-align:center;
+  padding:32px;
+  color: var(--muted);
+  font-size: 13px;
+  font-family: var(--display);
+}
+
+/* ── DONE BANNER ── */
+.done-wrap {
+  display: none;
+  margin-top: 16px;
+}
+
+.done-card {
+  background: linear-gradient(135deg, rgba(61,255,160,0.06), rgba(124,106,255,0.06));
+  border: 1px solid rgba(61,255,160,0.25);
+  border-radius: 12px;
+  padding: 28px;
+  text-align: center;
+}
+
+.done-card h3 {
+  font-family: var(--display);
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--green);
+  margin-bottom: 8px;
+}
+
+.done-card p { font-size: 14px; color: var(--muted); font-family: var(--display); }
+.done-card p strong { color: var(--text); }
+
+/* ── LOG ── */
+.log-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  margin-top: 20px;
+}
+
+.log-inner {
+  padding: 16px 20px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.9;
+}
+
+.log-inner::-webkit-scrollbar { width:4px; }
+.log-inner::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+
+.ll { display:flex; gap:14px; }
+.lt { color:var(--muted); min-width:72px; }
+.lm { color:var(--text); flex:1; }
+.lpost { color:var(--accent); min-width:44px; font-weight:600; }
+.lget  { color:var(--green);  min-width:44px; font-weight:600; }
+.lok  { color:var(--green); }
+.lerr { color:var(--red); }
+
+.spinner {
+  display:inline-block;
+  width:13px; height:13px;
+  border:2px solid rgba(255,255,255,0.15);
+  border-top-color:#fff;
+  border-radius:50%;
+  animation:spin 0.5s linear infinite;
+  vertical-align:middle;
+  margin-right:6px;
+}
+
+@keyframes spin{ to{transform:rotate(360deg)} }
+
+/* ── FOOTER ── */
+footer {
+  border-top: 1px solid var(--border);
+  padding: 40px 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  font-family: var(--display);
+}
+
+footer strong { color: var(--text); }
+</style>
+</head>
+<body>
+
+<!-- ════════════════ HERO ════════════════ -->
+<div class="wrap">
+  <section class="hero">
+    <div class="hero-glow"></div>
+    <div class="hero-badge">
+      <div class="badge-dot"></div>
+      Meta PyTorch Hackathon · Round 1 · OpenEnv Submission
+    </div>
+    <h1>
+      Bug Triage<br>
+      <span class="accent">Environment</span><br>
+      <span class="dim">for RL Agents</span>
+    </h1>
+    <p class="hero-desc">
+      A <strong>real-world OpenEnv environment</strong> where AI agents learn to classify, prioritise, assign, and respond to software bug reports — across three difficulty levels with partial reward scoring.
+    </p>
+    <div class="hero-tags">
+      <span class="tag tag-purple">OpenEnv Framework</span>
+      <span class="tag tag-green">3 Tasks · Partial Rewards</span>
+      <span class="tag tag-amber">FastAPI + Docker</span>
+      <span class="tag tag-red">Real-World Task</span>
+    </div>
+  </section>
+</div>
+
+<!-- ════════════════ PROBLEM ════════════════ -->
+<div class="wrap">
+  <section class="section">
+    <div class="section-label">The Problem</div>
+    <h2 class="section-title">Why does this exist?</h2>
+    <p class="section-body">
+      Every software company receives hundreds of bug reports daily. Triaging them — figuring out <strong>what type of bug it is, how urgent it is, and who should fix it</strong> — is slow, manual, and error-prone. We built an environment where an AI agent can practice this skill and be evaluated objectively.
+    </p>
+
+    <div class="problem-grid">
+      <div class="problem-card pc-red">
+        <div class="problem-icon pi-red">🐛</div>
+        <h3>Bug reports are messy</h3>
+        <p>Real bug reports are unstructured, written by frustrated users, and mixed with irrelevant detail. An agent must extract signal from noise — just like a human engineer.</p>
+      </div>
+      <div class="problem-card pc-amber">
+        <div class="problem-icon pi-amber">⏱</div>
+        <h3>Triage is time-critical</h3>
+        <p>A P0 security breach sitting in the wrong queue for 2 hours is catastrophic. Getting category and priority right fast is genuinely high-stakes in production.</p>
+      </div>
+      <div class="problem-card pc-purple">
+        <div class="problem-icon pi-purple">🤖</div>
+        <h3>No standard training env exists</h3>
+        <p>There's no open, reproducible environment where RL agents can practice bug triage at scale. We built one using the OpenEnv standard so anyone can train on it.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ════════════════ SOLUTION ════════════════ -->
+<div class="wrap">
+  <section class="section">
+    <div class="section-label">The Solution</div>
+    <h2 class="section-title">How our environment works</h2>
+    <p class="section-body">
+      We built a <strong>fully spec-compliant OpenEnv environment</strong>. An AI agent connects to it, receives a bug report, sends a JSON answer, and gets scored. Three calls. Simple interface. Real-world task.
+    </p>
+
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="flow-step-line">
+          <div class="step-circle">1</div>
+          <div class="step-connector"></div>
+        </div>
+        <div class="flow-step-content">
+          <h3>Agent calls <span style="color:var(--accent)">reset()</span></h3>
+          <p>The environment starts a fresh episode. The agent receives the <strong>first bug report</strong> (easy level) along with instructions on what format to answer in.</p>
+          <div class="code-inline"><span class="kw">POST</span> /reset → { <span class="st">"task_description"</span>: <span class="st">"Classify this bug..."</span>, <span class="st">"task_level"</span>: <span class="st">"easy"</span> }</div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-step-line">
+          <div class="step-circle">2</div>
+          <div class="step-connector"></div>
+        </div>
+        <div class="flow-step-content">
+          <h3>Agent calls <span style="color:var(--green)">step(action)</span> — 3 times</h3>
+          <p>For each of the 3 tasks, the agent sends a <strong>JSON answer</strong>. Our grader checks it against the correct answer and returns a <strong>partial reward from 0.0 to 1.0</strong>. The agent doesn't need to be perfect — small steps earn small rewards.</p>
+          <div class="code-inline">
+<span class="kw">POST</span> /step { <span class="st">"action"</span>: { <span class="st">"response"</span>: <span class="st">'{"category":"security","priority":"P0",...}'</span> }}<br>
+→ { <span class="st">"reward"</span>: <span class="nu">0.9</span>, <span class="st">"done"</span>: <span class="nu">false</span>, <span class="st">"feedback"</span>: <span class="st">"Last score: 0.9"</span> }
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-step-line">
+          <div class="step-circle">3</div>
+          <div class="step-connector"></div>
+        </div>
+        <div class="flow-step-content">
+          <h3>Graders score each answer independently</h3>
+          <p>Each task has its own grader function. <strong>Easy</strong> checks just the category. <strong>Medium</strong> checks category + priority + reason. <strong>Hard</strong> checks all four fields including the reply quality. This teaches the agent to improve gradually.</p>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="flow-step-line">
+          <div class="step-circle">4</div>
+        </div>
+        <div class="flow-step-content">
+          <h3>Deployed on <span style="color:var(--amber)">Hugging Face Spaces</span> via Docker</h3>
+          <p>The environment runs inside a <strong>Docker container</strong> on Hugging Face Spaces — fully isolated, reproducible, and accessible via a public URL. Judges ping <code style="font-size:12px;color:var(--accent)">/reset</code> and it responds instantly.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ════════════════ TASKS ════════════════ -->
+<div class="wrap">
+  <section class="section">
+    <div class="section-label">Task Design</div>
+    <h2 class="section-title">3 tasks · increasing difficulty</h2>
+    <p class="section-body">Each task builds on the previous one. The agent must produce progressively richer JSON answers and earns partial credit for each correct field.</p>
+
+    <div class="tasks-grid">
+      <div class="task-card">
+        <div class="task-card-header">
+          <h3>Classification</h3>
+          <span class="level-pill lp-easy">Easy</span>
+        </div>
+        <div class="task-card-body">
+          <p>Agent reads a bug report and picks the correct category: <strong>UI, backend, infra, or security</strong>. One field. Binary score.</p>
+          <div class="reward-formula">
+            <div class="rf-line"><span class="rf-label">Correct category</span><span class="rf-val">+1.0</span></div>
+            <div class="rf-line"><span class="rf-label">Wrong category</span><span class="rf-val">+0.0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="task-card">
+        <div class="task-card-header">
+          <h3>Priority + Reason</h3>
+          <span class="level-pill lp-medium">Medium</span>
+        </div>
+        <div class="task-card-body">
+          <p>Agent must classify the bug <strong>and</strong> assign a priority (P0–P3) with a written justification. Three fields, partial credit for each.</p>
+          <div class="reward-formula">
+            <div class="rf-line"><span class="rf-label">Correct category</span><span class="rf-val">+0.4</span></div>
+            <div class="rf-line"><span class="rf-label">Correct priority</span><span class="rf-val">+0.4</span></div>
+            <div class="rf-line"><span class="rf-label">Reason &gt; 10 chars</span><span class="rf-val">+0.2</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="task-card">
+        <div class="task-card-header">
+          <h3>Full Triage + Reply</h3>
+          <span class="level-pill lp-hard">Hard</span>
+        </div>
+        <div class="task-card-body">
+          <p>Agent must classify, prioritise, assign to the <strong>correct team</strong>, and <strong>draft a 2-sentence reply</strong> with appropriate tone (urgency, apology).</p>
+          <div class="reward-formula">
+            <div class="rf-line"><span class="rf-label">Correct category</span><span class="rf-val">+0.3</span></div>
+            <div class="rf-line"><span class="rf-label">Correct priority</span><span class="rf-val">+0.3</span></div>
+            <div class="rf-line"><span class="rf-label">Correct team</span><span class="rf-val">+0.2</span></div>
+            <div class="rf-line"><span class="rf-label">Reply length</span><span class="rf-val">+0.1</span></div>
+            <div class="rf-line"><span class="rf-label">Reply tone</span><span class="rf-val">+0.1</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ════════════════ WHAT MAKES IT DIFFERENT ════════════════ -->
+<div class="wrap">
+  <section class="section">
+    <div class="section-label">What makes it different</div>
+    <h2 class="section-title">Why this stands out</h2>
+    <p class="section-body">Most hackathon environments simulate games or toy problems. We built something judges immediately recognise as <strong>real and valuable</strong>.</p>
+
+    <div class="diff-grid">
+      <div class="diff-card">
+        <h3><div class="diff-icon di-green">✦</div> Real-world task</h3>
+        <p>Bug triage happens at <strong>every software company every day</strong>. This isn't a made-up puzzle — it's a task that costs real engineering hours when done manually. Judges see immediate practical value.</p>
+      </div>
+      <div class="diff-card">
+        <h3><div class="diff-icon di-purple">◈</div> Partial reward shaping</h3>
+        <p>Most submissions use binary 0/1 rewards. Ours awards <strong>credit for each correct field independently</strong> — so an agent that gets the category right but misses priority still learns something. This is better RL training signal.</p>
+      </div>
+      <div class="diff-card">
+        <h3><div class="diff-icon di-amber">◉</div> Structured JSON grading</h3>
+        <p>The grader is <strong>deterministic and programmatic</strong> — no LLM judge, no randomness. Same answer always gets the same score. This makes the environment reproducible and trustworthy for RL training.</p>
+      </div>
+      <div class="diff-card">
+        <h3><div class="diff-icon di-red">▲</div> Progressive difficulty</h3>
+        <p>3 tasks that build on each other — <strong>easy → medium → hard</strong> — give the agent a curriculum to follow. The hardest task requires both factual accuracy and natural language quality (reply tone).</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ════════════════ LIVE DEMO ════════════════ -->
+<div class="wrap">
+  <section class="demo-section">
+    <div class="section-label">Live Demo</div>
+    <h2 class="section-title">Try it yourself</h2>
+    <p class="section-body">Connect to your running server and interact with the environment directly. Click <strong>Start Episode</strong>, pick a quick answer, and watch the scores update in real time.</p>
+
+    <!-- TOOLBAR -->
+    <div class="demo-toolbar">
+      <span style="font-size:12px;color:var(--muted);white-space:nowrap">Server URL</span>
+      <input class="url-field" id="serverUrl" value="http://127.0.0.1:8000" />
+      <div class="server-badge">
+        <div class="sdot" id="sdot"></div>
+        <span id="stext">not connected</span>
+      </div>
+      <button class="btn btn-outline" onclick="ping()">Ping</button>
+      <button class="btn btn-accent" onclick="doReset()" id="resetBtn">▶ Start Episode</button>
+    </div>
+
+    <!-- STATS -->
+    <div class="stats-bar">
+      <div class="stat">
+        <div class="stat-lbl">Episode ID</div>
+        <div class="stat-num c-accent" id="sEp" style="font-size:20px;padding-top:4px">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-lbl">Steps taken</div>
+        <div class="stat-num" id="sSteps">0</div>
+      </div>
+      <div class="stat">
+        <div class="stat-lbl">Last reward</div>
+        <div class="stat-num c-green" id="sReward">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-lbl">Avg score</div>
+        <div class="stat-num c-amber" id="sAvg">—</div>
+      </div>
+    </div>
+
+    <!-- DEMO GRID -->
+    <div class="demo-grid">
+
+      <!-- LEFT: Task -->
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Current Bug Report</span>
+          <span id="lvlBadge"></span>
+        </div>
+        <div class="panel-body" id="taskBody">
+          <div class="idle-state">
+            <div class="idle-icon">⬡</div>
+            <h3>No active episode</h3>
+            <p>Click <strong>Start Episode</strong> above to receive your first bug report and begin the triage challenge.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Action -->
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Your Answer</span>
+          <span class="endpoint-pill">POST /step</span>
+        </div>
+        <div class="panel-body">
+          <div class="level-tabs">
+            <button class="ltab active" onclick="switchTab('easy',this)">Easy</button>
+            <button class="ltab" onclick="switchTab('medium',this)">Medium</button>
+            <button class="ltab" onclick="switchTab('hard',this)">Hard</button>
+          </div>
+
+          <div class="hint-box" id="hintBox">
+            <span class="hk">"category"</span>: <span class="hv">"UI"</span> &nbsp;|&nbsp;
+            <span class="hk">"category"</span>: <span class="hv">"backend"</span> &nbsp;|&nbsp;
+            <span class="hk">"category"</span>: <span class="hv">"infra"</span> &nbsp;|&nbsp;
+            <span class="hk">"category"</span>: <span class="hv">"security"</span>
+          </div>
+
+          <textarea class="ans-textarea" id="ansInput" placeholder='{"category": "UI"}'></textarea>
+
+          <div class="quick-row" id="quickRow">
+            <button class="qbtn" onclick="qfill('easy','UI')">UI bug</button>
+            <button class="qbtn" onclick="qfill('easy','backend')">Backend bug</button>
+            <button class="qbtn" onclick="qfill('easy','security')">Security bug</button>
+            <button class="qbtn" onclick="qfill('easy','infra')">Infra bug</button>
+          </div>
+
+          <div class="action-row">
+            <button class="btn btn-green" id="stepBtn" onclick="doStep()" disabled>Send Answer</button>
+            <button class="btn btn-outline" onclick="doState()">Get State</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- SCORES + HISTORY -->
+    <div class="demo-grid" style="margin-top:20px">
+
+      <div class="panel">
+        <div class="panel-head"><span class="panel-title">Score Breakdown</span></div>
+        <div class="panel-body">
+          <div class="sbar-row">
+            <span class="sbar-lbl">Easy</span>
+            <div class="sbar-track"><div class="sbar-fill sf-green" id="sfEasy"></div></div>
+            <span class="sbar-val" id="svEasy" style="color:var(--green)">—</span>
+          </div>
+          <div class="sbar-row">
+            <span class="sbar-lbl">Medium</span>
+            <div class="sbar-track"><div class="sbar-fill sf-amber" id="sfMed"></div></div>
+            <span class="sbar-val" id="svMed" style="color:var(--amber)">—</span>
+          </div>
+          <div class="sbar-row">
+            <span class="sbar-lbl">Hard</span>
+            <div class="sbar-track"><div class="sbar-fill sf-red" id="sfHard"></div></div>
+            <span class="sbar-val" id="svHard" style="color:var(--red)">—</span>
+          </div>
+          <div class="divider"></div>
+          <div class="sbar-row">
+            <span class="sbar-lbl" style="color:var(--text);font-weight:700">Average</span>
+            <div class="sbar-track"><div class="sbar-fill sf-accent" id="sfAvg"></div></div>
+            <span class="sbar-val" id="svAvg" style="color:var(--accent)">—</span>
+          </div>
+          <div class="done-wrap" id="doneWrap">
+            <div class="done-card">
+              <h3 id="doneTitle">Episode Complete!</h3>
+              <p id="doneBody">Average score across all 3 tasks.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <span class="panel-title">Step History</span>
+          <span style="font-size:12px;color:var(--muted)" id="hCount">0 steps</span>
+        </div>
+        <div class="panel-body">
+          <div class="history-scroll" id="hList">
+            <div class="no-history">No steps yet — start an episode first</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOG -->
+    <div class="log-wrap">
+      <div class="panel-head">
+        <span class="panel-title">API Log</span>
+        <button class="btn btn-outline" style="padding:4px 12px;font-size:11px" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="log-inner" id="logEl">
+        <div class="ll"><span class="lt">--:--:--</span><span class="lm" style="color:var(--muted)">Waiting for connection...</span></div>
+      </div>
+    </div>
+
+  </section>
+</div>
+
+<footer>
+  <div class="wrap">
+    Built for the <strong>Meta × PyTorch OpenEnv Hackathon</strong> · Round 1 · April 2026<br>
+    <span style="font-size:12px;margin-top:6px;display:block">Bug Triage Environment · OpenEnv Framework · Hugging Face Spaces</span>
+  </div>
+</footer>
+
+<script>
+// ── STATE ──────────────────────────────────────────────
+let active = false, stepCount = 0, scores = {easy:null,medium:null,hard:null};
+let history = [], stepIdx = 0;
+
+const base = () => document.getElementById('serverUrl').value.replace(/\/$/,'');
+
+// ── HELPERS ────────────────────────────────────────────
+function log(method, msg, status) {
+  const el = document.getElementById('logEl');
+  const t = new Date().toLocaleTimeString('en',{hour12:false});
+  const d = document.createElement('div');
+  d.className = 'll';
+  const sc = status==='ok'?'lok':status==='err'?'lerr':'';
+  d.innerHTML = `<span class="lt">${t}</span><span class="${method==='GET'?'lget':'lpost'}">${method}</span><span class="lm">${msg} <span class="${sc}">${status==='ok'?'✓':status==='err'?'✗':''}</span></span>`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+
+function clearLog(){ document.getElementById('logEl').innerHTML=''; }
+
+function setServer(state) {
+  const dot=document.getElementById('sdot'), txt=document.getElementById('stext');
+  if(state==='on'){dot.className='sdot on';txt.textContent='server online';}
+  else if(state==='err'){dot.className='sdot err';txt.textContent='cannot reach server';}
+  else{dot.className='sdot';txt.textContent='not connected';}
+}
+
+async function api(path, method='GET', body=null){
+  const o={method,headers:{'Content-Type':'application/json'}};
+  if(body) o.body=JSON.stringify(body);
+  const r=await fetch(base()+path,o);
+  if(!r.ok){const e=await r.text();throw new Error(e);}
+  return r.json();
+}
+
+// ── PING ───────────────────────────────────────────────
+async function ping(){
+  try{ await api('/health'); setServer('on'); log('GET','/health','ok'); }
+  catch{ setServer('err'); log('GET','/health','err'); }
+}
+
+// ── RESET ──────────────────────────────────────────────
+async function doReset(){
+  const btn=document.getElementById('resetBtn');
+  btn.innerHTML='<span class="spinner"></span>Starting...'; btn.disabled=true;
+  try{
+    const d=await api('/reset','POST',{});
+    log('POST','/reset — episode started','ok');
+    setServer('on');
+    active=true; stepCount=0; stepIdx=0;
+    scores={easy:null,medium:null,hard:null}; history=[];
+    document.getElementById('hList').innerHTML='<div class="no-history">No steps yet</div>';
+    document.getElementById('doneWrap').style.display='none';
+    resetBars(); updateStats(d);
+    renderTask(d.observation||d);
+    document.getElementById('stepBtn').disabled=false;
+  }catch(e){ log('POST','/reset — '+e.message,'err'); setServer('err'); }
+  btn.innerHTML='▶ Start Episode'; btn.disabled=false;
+}
+
+// ── STEP ───────────────────────────────────────────────
+async function doStep(){
+  const raw=document.getElementById('ansInput').value.trim();
+  if(!raw){alert('Enter an answer first');return;}
+  const btn=document.getElementById('stepBtn');
+  btn.innerHTML='<span class="spinner"></span>Sending...'; btn.disabled=true;
+  try{
+    const d=await api('/step','POST',{action:{response:raw}});
+    log('POST',`/step — reward: ${d.reward}`,'ok');
+    stepCount++;
+    const obs=d.observation||d;
+    updateStats(d); addHistory(obs,d.reward,raw); updateBars(obs,d.reward);
+    renderTask(obs);
+    if(obs.done){ active=false; showDone(); }
+    else btn.disabled=false;
+  }catch(e){ log('POST','/step — '+e.message,'err'); btn.disabled=false; }
+  btn.innerHTML='Send Answer';
+}
+
+// ── STATE ──────────────────────────────────────────────
+async function doState(){
+  try{
+    const d=await api('/state');
+    log('GET',`/state — steps:${d.step_count} ep:${(d.episode_id||'').slice(0,8)}`,'ok');
+    document.getElementById('sSteps').textContent=d.step_count??'—';
+    document.getElementById('sEp').textContent=(d.episode_id||'—').slice(0,6);
+  }catch(e){ log('GET','/state — '+e.message,'err'); }
+}
+
+// ── RENDER TASK ────────────────────────────────────────
+function renderTask(obs){
+  const lvl=obs.task_level||'easy';
+  const cls={easy:'lp-easy',medium:'lp-medium',hard:'lp-hard'}[lvl]||'';
+  document.getElementById('lvlBadge').innerHTML=`<span class="level-pill ${cls}">${lvl}</span>`;
+
+  if(obs.done){
+    document.getElementById('taskBody').innerHTML=`<div class="idle-state"><div class="idle-icon">✓</div><h3>Episode complete!</h3><p>All 3 tasks finished. Click <strong>Start Episode</strong> to run again.</p></div>`;
+    return;
+  }
+
+  const desc=obs.task_description||'';
+  const parts=desc.split('BUG REPORT:');
+  const inst=parts[0]?.trim()||'';
+  const report=parts[1]?.trim()||desc;
+
+  document.getElementById('taskBody').innerHTML=`
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Instructions</div>
+    <div class="task-instruct">${inst}</div>
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px">Bug Report</div>
+    <div class="bug-box">${report}</div>
+    ${obs.feedback?`<div class="feedback-row"><span class="fb-icon">›</span><span>${obs.feedback}</span></div>`:''}
+  `;
+}
+
+// ── STATS ──────────────────────────────────────────────
+function updateStats(d){
+  const obs=d.observation||d;
+  document.getElementById('sEp').textContent=(d.episode_id||(obs&&obs.episode_id)||'—').toString().slice(0,6);
+  document.getElementById('sSteps').textContent=stepCount;
+  if(d.reward!=null) document.getElementById('sReward').textContent=parseFloat(d.reward).toFixed(2);
+  if(history.length){
+    const avg=history.reduce((a,b)=>a+b,0)/history.length;
+    document.getElementById('sAvg').textContent=avg.toFixed(2);
+  }
+}
+
+// ── HISTORY ────────────────────────────────────────────
+function addHistory(obs,reward,resp){
+  history.push(reward);
+  const lvl=obs.task_level||'easy';
+  const cls={easy:'lp-easy',medium:'lp-medium',hard:'lp-hard'}[lvl]||'';
+  const sc=reward>=0.8?'hs-hi':reward>=0.4?'hs-md':'hs-lo';
+  const list=document.getElementById('hList');
+  if(list.querySelector('.no-history')) list.innerHTML='';
+  const el=document.createElement('div'); el.className='h-item';
+  el.innerHTML=`
+    <div class="h-item-top">
+      <span class="level-pill ${cls}">${lvl}</span>
+      <span class="h-score ${sc}">${parseFloat(reward).toFixed(2)}</span>
+    </div>
+    <div class="h-response">${resp.slice(0,120)}${resp.length>120?'...':''}</div>
+    ${obs.feedback?`<div class="h-feedback">${obs.feedback}</div>`:''}
+  `;
+  list.prepend(el);
+  document.getElementById('hCount').textContent=`${history.length} step${history.length!==1?'s':''}`;
+  const avg=history.reduce((a,b)=>a+b,0)/history.length;
+  document.getElementById('sAvg').textContent=avg.toFixed(2);
+}
+
+// ── SCORE BARS ─────────────────────────────────────────
+function updateBars(obs,reward){
+  const lvl=obs.task_level||'easy';
+  if(lvl==='easy'||stepIdx===0){ scores.easy=reward; stepIdx=1; }
+  else if(lvl==='medium'||stepIdx===1){ scores.medium=reward; stepIdx=2; }
+  else { scores.hard=reward; stepIdx=3; }
+
+  const set=(fid,vid,v)=>{
+    if(v==null)return;
+    document.getElementById(fid).style.width=(v*100)+'%';
+    document.getElementById(vid).textContent=v.toFixed(2);
+  };
+  set('sfEasy','svEasy',scores.easy);
+  set('sfMed','svMed',scores.medium);
+  set('sfHard','svHard',scores.hard);
+
+  const filled=Object.values(scores).filter(s=>s!=null);
+  if(filled.length){
+    const avg=filled.reduce((a,b)=>a+b,0)/filled.length;
+    document.getElementById('sfAvg').style.width=(avg*100)+'%';
+    document.getElementById('svAvg').textContent=avg.toFixed(2);
+  }
+}
+
+function resetBars(){
+  ['sfEasy','sfMed','sfHard','sfAvg'].forEach(id=>document.getElementById(id).style.width='0%');
+  ['svEasy','svMed','svHard','svAvg'].forEach(id=>document.getElementById(id).textContent='—');
+  ['sReward','sAvg','sEp'].forEach(id=>document.getElementById(id).textContent='—');
+  document.getElementById('sSteps').textContent='0';
+}
+
+function showDone(){
+  const filled=Object.values(scores).filter(s=>s!=null);
+  const avg=filled.length?(filled.reduce((a,b)=>a+b,0)/filled.length).toFixed(2):'—';
+  document.getElementById('doneWrap').style.display='block';
+  document.getElementById('doneTitle').textContent='Episode Complete!';
+  document.getElementById('doneBody').innerHTML=`Average score: <strong style="color:var(--green)">${avg}</strong> across ${filled.length} tasks`;
+}
+
+// ── TABS & QUICK FILL ──────────────────────────────────
+const hints={
+  easy:`<span class="hk">"category"</span>: <span class="hv">"UI"</span> | <span class="hv">"backend"</span> | <span class="hv">"infra"</span> | <span class="hv">"security"</span>`,
+  medium:`<span class="hk">"category"</span> + <span class="hk">"priority"</span>: <span class="hv">"P0"/"P1"/"P2"/"P3"</span> + <span class="hk">"reason"</span>: <span class="hv">"..."</span>`,
+  hard:`<span class="hk">"category"</span> + <span class="hk">"priority"</span> + <span class="hk">"team"</span> + <span class="hk">"reply"</span> (2 sentences)`
+};
+
+const qFills={
+  easy:[
+    {l:'UI bug',    v:'{"category":"UI"}'},
+    {l:'Backend bug',v:'{"category":"backend"}'},
+    {l:'Security bug',v:'{"category":"security"}'},
+    {l:'Infra bug', v:'{"category":"infra"}'},
+  ],
+  medium:[
+    {l:'Backend P1',v:'{"category":"backend","priority":"P1","reason":"Production failure affecting all users over 10MB"}'},
+    {l:'UI P2',     v:'{"category":"UI","priority":"P2","reason":"Mobile display issue affecting iPhone users only"}'},
+    {l:'Security P0',v:'{"category":"security","priority":"P0","reason":"Possible data breach affecting multiple users"}'},
+  ],
+  hard:[
+    {l:'Security P0',v:'{"category":"security","priority":"P0","team":"security","reply":"We acknowledge this critical data breach and have immediately escalated to our security team. We sincerely apologise and will provide a full update within 2 hours."}'},
+    {l:'Backend P1', v:'{"category":"backend","priority":"P1","team":"backend","reply":"Thank you for reporting this upload issue, we apologise for the inconvenience. Our backend team is investigating and will resolve it urgently."}'},
+  ]
+};
+
+function switchTab(tab, btn){
+  document.querySelectorAll('.ltab').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('hintBox').innerHTML=hints[tab]||'';
+  const qr=document.getElementById('quickRow');
+  qr.innerHTML=(qFills[tab]||[]).map(f=>`<button class="qbtn" onclick='document.getElementById("ansInput").value=\`${f.v.replace(/`/g,"'")}\`'>${f.l}</button>`).join('');
+}
+
+function qfill(tab, cat){ document.getElementById('ansInput').value=`{"category":"${cat}"}`; }
+
+// ── INIT ───────────────────────────────────────────────
+ping();
+</script>
+</body>
+</html>
